@@ -19,58 +19,70 @@ brain Brain;
 ButtonManager buttonManager;
 
 // define your global instances of motors and other devices here
-motor leftMotor = motor(PORT19, ratio36_1, false);
+motor leftMotor = motor(PORT6, ratio18_1, false);
 
-motor rightMotor = motor(PORT11, ratio36_1, true);
+motor rightMotor = motor(PORT9, ratio18_1, true);
 
 controller Controller1 = controller(primary);
 
-inertial inertialSensor = inertial(PORT12);
+// inertial inertialSensor = inertial(PORT12);
 
-smartdrive Drivetrain = smartdrive(leftMotor, rightMotor, inertialSensor, 3.25, 9.5, 16, inches, 1);
+drivetrain Drivetrain = drivetrain(leftMotor, rightMotor, 25.13, 43.5, 23, distanceUnits::cm, 1);
 
-motor intakeMotor = motor(PORT18, ratio6_1, false);
-motor converyorMotor = motor(PORT20, ratio18_1, true);
+motor intakeMotor = motor(PORT7, ratio6_1, true);
+motor converyorMotor = motor(PORT10, ratio18_1, true);
 
-int converyorSpeed = 100;
+pneumatics portA = pneumatics(Brain.ThreeWirePort.G);
+pneumatics portB = pneumatics(Brain.ThreeWirePort.H);
+
+int converyorSpeed = 80;
 bool intakeOn = false;
 bool converyorOn = false;
+bool extendClamp = false;
 
 bool leftSide = false;
+bool blueTeam = false;
 
 void auton1Selected() {
-  Brain.Screen.clearScreen();
-  Brain.Screen.printAt(1, 20, "Left side");
-
+  Brain.Screen.setFillColor(color::orange);
+  Brain.Screen.printAt(5, 20, "Left side");
   leftSide = true;
-
   return;
 }
 
 void auton2Selected() {
-  Brain.Screen.clearScreen();
-  Brain.Screen.printAt(1, 20, "Right side");
-
+  Brain.Screen.setFillColor(color::green);
+  Brain.Screen.printAt(5, 20, "Right side");
   leftSide = false;
+  return;
+}
 
+void blueTeamSelected() {
+  Brain.Screen.setFillColor(color::blue);
+  Brain.Screen.printAt(5, 40, "Blue Team");
+  blueTeam = true;
+  return;
+}
+
+void redTeamSelected() {
+  Brain.Screen.setFillColor(color::red);
+  Brain.Screen.printAt(5, 40, "Red Team");
+  blueTeam = false;
   return;
 }
 
 void pre_auton(void) {
-  leftMotor.setBrake(hold);
+  intakeMotor.setMaxTorque(100, percent);
 
-  rightMotor.setBrake(hold);
-
-  Drivetrain.setDriveVelocity(100, percent);
-  Drivetrain.setTurnVelocity(100, percent);
-
-  inertialSensor.calibrate();
-
-  Button button1(50, 50, 150, 50, color::blue, "Left", auton1Selected);
-  Button button2(50, 150, 150, 50, color::red, "Right", auton2Selected);
+  Button button1(50, 50, 150, 50, color::orange, "Left", auton1Selected);
+  Button button2(50, 150, 150, 50, color::green, "Right", auton2Selected);
+  Button button3(250, 50, 150, 50, color::blue, "Blue Team", blueTeamSelected);
+  Button button4(250, 150, 150, 50, color::red, "Red Team", redTeamSelected);
 
   buttonManager.addButton(button1);
   buttonManager.addButton(button2);
+  buttonManager.addButton(button3);
+  buttonManager.addButton(button4);
 
   buttonManager.drawAllButtons();
 
@@ -88,39 +100,56 @@ void pre_auton(void) {
   return;
 }
 
+void clamp() {
+  if (extendClamp) {
+    portA.open();
+    portB.close();
+  } else {
+    portA.close();
+    portB.open();
+  }
+  extendClamp = !extendClamp;
+}
+
 void autonomous(void) {
   Drivetrain.setDriveVelocity(100, percent);
-  converyorMotor.setMaxTorque(100, percent);
-  converyorMotor.setVelocity(100, percent);
+  Drivetrain.setTurnVelocity(100, percent);
 
-  converyorMotor.spin(forward);
-  wait(3, sec);
+  // converyorMotor.setMaxTorque(100, percent);
+  converyorMotor.setVelocity(85, percent);
+
+  Drivetrain.driveFor(reverse, 850, mm, true);
+  Drivetrain.turnFor(5, degrees, true);
+  Drivetrain.turnFor(-10, degrees, true);
+  Drivetrain.turnFor(5, degrees, true);
+  Drivetrain.driveFor(reverse, 100, mm, true);
+
+  converyorMotor.spin(reverse);
+  vex::wait(1.5, sec);
   converyorMotor.stop();
 
+  Drivetrain.driveFor(5, mm, true);
+
+  vex::wait(100, msec);
+  portA.open();
+  portB.close();
 
   intakeMotor.spin(forward, 100, percent);
-  wait(1000, msec);
+
+  int turnAngle = 80 * (leftSide ? 1 : -1); // negative if left side, simplifies code imo
+
+  Drivetrain.turnFor(turnAngle, degrees, true);
+
+  Drivetrain.driveFor(600, mm, true);
+
+  vex::wait(100, msec);
+  portB.open();
+  portA.close();
+
+  converyorMotor.spin(reverse);
+  vex::wait(2, sec);
+  converyorMotor.stop();
   intakeMotor.stop();
-
-  if (leftSide) {
-    Drivetrain.turnFor(90, degrees);
-    
-    Drivetrain.driveFor(12 * 3, inches, true);
-    Drivetrain.turnFor(-90, degrees);
-    Drivetrain.setDriveVelocity(-100, percent);
-
-    Drivetrain.driveFor(12, inches, true);
-  } else {
-    Drivetrain.turnFor(-90, degrees);
-
-    Drivetrain.driveFor(12 * 3, inches, true);
-    Drivetrain.turnFor(90, degrees);
-    Drivetrain.setDriveVelocity(-100, percent);
-
-    Drivetrain.driveFor(12, inches, true);
-  }
-
-  converyorMotor.spin(forward, 100, percent);
 
   return;
 }
@@ -128,17 +157,8 @@ void autonomous(void) {
 void usercontrol(void) {
   // User control code here, inside the loop
   leftMotor.setBrake(hold);
-
   rightMotor.setBrake(hold);
-  
-  leftMotor.setMaxTorque(100, percent);
-  rightMotor.setMaxTorque(100, percent);
-
-  leftMotor.setVelocity(100, percent);
-  rightMotor.setVelocity(100, percent);
-
-  Drivetrain.setDriveVelocity(100, percent);
-  Drivetrain.setTurnVelocity(100, percent);
+  intakeMotor.setMaxTorque(100, percent);
 
   Controller1.ButtonUp.pressed([]() {
     if (converyorSpeed < 100) {
@@ -152,7 +172,6 @@ void usercontrol(void) {
     }
   }); 
 
-  // Spin the intake motor when ButtonA is pressed until it is pressed again
   Controller1.ButtonA.pressed([]() {
     if (intakeOn) {
       intakeMotor.stop();
@@ -162,26 +181,13 @@ void usercontrol(void) {
     intakeOn = !intakeOn;
   });
 
-  Controller1.ButtonB.pressed([]() {
-    if (converyorOn) {
-      converyorMotor.stop();
-    } else {
-      converyorMotor.spin(forward, converyorSpeed, percent);
-    }
-    converyorOn = !converyorOn;
+  Controller1.ButtonX.pressed([]() {
+    clamp();
   });
 
   while (1) {
     leftMotor.spin(forward, Controller1.Axis3.position(), percent);
     rightMotor.spin(forward, Controller1.Axis2.position(), percent);
-
-    if (Controller1.ButtonR1.pressing()) {
-      Drivetrain.drive(forward);
-    } else if (Controller1.ButtonL1.pressing()) {
-      Drivetrain.drive(reverse);
-    } else if (Controller1.Axis3.position() == 0 && Controller1.Axis2.position() == 0) {
-      Drivetrain.stop();
-    }
 
     if (Controller1.ButtonR2.pressing() || Controller1.ButtonL2.pressing()) {
       converyorMotor.stop();
